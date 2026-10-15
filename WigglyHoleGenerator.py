@@ -142,6 +142,14 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             fin_direction.listItems.add(FinDirection.CLOCKWISE, True)
             fin_direction.listItems.add(FinDirection.COUNTER_CLOCKWISE, False)
 
+            fin_fillet = f_inputs.addBoolValueInput('finFillet', 'Root Fillet', True, '', True)
+            fin_fillet.tooltip = 'Add a fillet where the fins connect to the hole wall to relieve stress concentration.'
+
+            fin_fillet_radius = f_inputs.addValueInput(
+                'finFilletRadius', 'Fillet Radius', length_unit, adsk.core.ValueInput.createByString('0.5 mm')
+            )
+            fin_fillet_radius.tooltip = 'Radius of the fillet blending the fin root into the hole wall.'
+
             fin_full_depth = f_inputs.addBoolValueInput('finFullDepth', 'Full Depth', True, '', True)
             fin_full_depth.tooltip = 'Extend the fins along the entire axial length of the hole.'
 
@@ -265,6 +273,8 @@ class InputChangedHandler(adsk.core.InputChangedEventHandler):
             fin_lead_in = inputs.itemById('finLeadIn')
             fin_lead_in_length = inputs.itemById('finLeadInLength')
             fin_flip = inputs.itemById('finFlip')
+            fin_fillet = inputs.itemById('finFillet')
+            fin_fillet_radius = inputs.itemById('finFilletRadius')
 
             # Handle Type Toggle
             if changed_input.id == 'featureType':
@@ -296,6 +306,11 @@ class InputChangedHandler(adsk.core.InputChangedEventHandler):
             if changed_input.id == 'finLeadIn' and fin_lead_in:
                 if fin_lead_in_length:
                     fin_lead_in_length.isVisible = fin_lead_in.value
+
+            # Handle Root Fillet toggle
+            if changed_input.id == 'finFillet' and fin_fillet:
+                if fin_fillet_radius:
+                    fin_fillet_radius.isVisible = fin_fillet.value
 
         except:
             if _ui:
@@ -350,6 +365,8 @@ def _extract_fin_params(inputs: adsk.core.CommandInputs) -> dict:
     off_inp = inputs.itemById('finOffset')
     lead_inp = inputs.itemById('finLeadIn')
     lead_len_inp = inputs.itemById('finLeadInLength')
+    fillet_inp = inputs.itemById('finFillet')
+    fillet_rad_inp = inputs.itemById('finFilletRadius')
 
     count = count_inp.value if count_inp else 4
     thickness = thick_inp.value if thick_inp else 0.08
@@ -362,6 +379,8 @@ def _extract_fin_params(inputs: adsk.core.CommandInputs) -> dict:
     offset = off_inp.value if off_inp else 0.0
     has_lead_in = lead_inp.value if lead_inp else True
     lead_in_length = lead_len_inp.value if lead_len_inp else 0.15
+    has_fillet = fillet_inp.value if fillet_inp else True
+    fillet_radius = fillet_rad_inp.value if fillet_rad_inp else 0.05
 
     return {
         'count': int(count),
@@ -374,7 +393,9 @@ def _extract_fin_params(inputs: adsk.core.CommandInputs) -> dict:
         'length': float(length),
         'offset': float(offset),
         'has_lead_in': bool(has_lead_in),
-        'lead_in_length': float(lead_in_length)
+        'lead_in_length': float(lead_in_length),
+        'has_fillet': bool(has_fillet),
+        'fillet_radius': float(fillet_radius)
     }
 
 
@@ -402,7 +423,7 @@ def _commit_feature(inputs: adsk.core.CommandInputs) -> bool:
         if not tool_body or not tool_body.isValid:
             return False
 
-        apply_tool_body(parent_component, target_body, tool_body, "Compliant Fins")
+        apply_tool_body(parent_component, target_body, tool_body, "Compliant Fins", cyl_data, params)
         return True
 
     elif feature_type == TYPE_COATHANGER:

@@ -122,13 +122,15 @@ class WigglyHoleGeneratorCommand:
             self.ui.set_status("Failed to generate solid tool body.", is_error=True)
             return False
 
-        # Apply to model via Combine Join
+        # Apply to model via Combine Join (with optional root fillets)
         try:
             apply_tool_body(
                 params['component'],
                 params['target_body'],
                 tool_body,
-                feature_name=feature_type
+                feature_name=feature_type,
+                cyl_data=cyl_data,
+                params=params
             )
             return True
         except Exception as e:

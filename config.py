@@ -50,6 +50,8 @@ class CompliantFinDefaults:
     FULL_DEPTH = True
     HAS_LEAD_IN = True
     LEAD_IN_LENGTH_MM = 1.5
+    HAS_FILLET = True
+    FILLET_RADIUS_MM = 0.5
     FLIP_DIRECTION = False
 
 
@@ -74,10 +76,13 @@ def calculate_compliant_fin_defaults(diameter_mm: float, depth_mm: float):
     thickness = 0.8 if diameter_mm < 10.0 else 1.0
     lead_in = min(max(1.0, depth_mm * 0.15), 3.0)
     count = 3 if diameter_mm < 6.0 else 4
+    fillet_r = round(min(0.8, max(0.3, thickness * 0.5)), 2)
     return {
         'count': count,
         'thickness_mm': round(thickness, 2),
         'slant_angle_deg': CompliantFinDefaults.SLANT_ANGLE_DEG,
         'protrusion_mm': round(protrusion, 2),
-        'lead_in_length_mm': round(lead_in, 2)
+        'lead_in_length_mm': round(lead_in, 2),
+        'has_fillet': CompliantFinDefaults.HAS_FILLET,
+        'fillet_radius_mm': fillet_r
     }

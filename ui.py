@@ -155,6 +155,13 @@ class WigglyHoleGeneratorUI:
         self.fin_flip = f_inputs.addBoolValueInput('finFlip', 'Flip Direction', True, '', False)
         self.fin_flip.tooltip = 'Reverses the hole entrance / start direction.'
 
+        self.fin_fillet = f_inputs.addBoolValueInput('finFillet', 'Root Fillet', True, '', True)
+        self.fin_fillet.tooltip = 'Add a fillet where the fins connect to the hole wall to relieve stress concentration.'
+        self.fin_fillet_radius = f_inputs.addValueInput(
+            'finFilletRadius', 'Fillet Radius', self.length_unit, adsk.core.ValueInput.createByString('0.5 mm')
+        )
+        self.fin_fillet_radius.tooltip = 'Radius of the fillet blending the fin root into the hole wall.'
+
         # --- 6. Preview and Status ---
         self.preview_checkbox = inputs.addBoolValueInput('showPreview', 'Show Preview', True, '', True)
         self.status_message = inputs.addTextBoxCommandInput('statusMessage', '', '', 2, True)
@@ -182,6 +189,7 @@ class WigglyHoleGeneratorUI:
             self.fin_length.isVisible = not self.fin_full_depth.value
             self.fin_offset.isVisible = not self.fin_full_depth.value
             self.fin_lead_in_length.isVisible = self.fin_lead_in.value
+            self.fin_fillet_radius.isVisible = self.fin_fillet.value
 
     def on_input_changed(self, changed_input: adsk.core.CommandInput):
         """Handles changes to any input field."""
@@ -200,8 +208,10 @@ class WigglyHoleGeneratorUI:
             self._update_pin_info()
         elif changed_input.id in (self.crush_count.id, self.crush_width.id, self.crush_lead_in_length.id):
             self._has_customized_crush = True
-        elif changed_input.id in (self.fin_count.id, self.fin_thickness.id, self.fin_lead_in_length.id):
+        elif changed_input.id in (self.fin_count.id, self.fin_thickness.id, self.fin_lead_in_length.id, self.fin_fillet_radius.id):
             self._has_customized_fin = True
+        elif changed_input.id == self.fin_fillet.id:
+            self.fin_fillet_radius.isVisible = self.fin_fillet.value
 
         self.update_visibility()
 
@@ -237,6 +247,8 @@ class WigglyHoleGeneratorUI:
                     self.fin_thickness.value = fin_defs['thickness_mm'] / 10.0
                     self.fin_protrusion.value = fin_defs['protrusion_mm'] / 10.0
                     self.fin_lead_in_length.value = fin_defs['lead_in_length_mm'] / 10.0
+                    self.fin_fillet.value = fin_defs.get('has_fillet', True)
+                    self.fin_fillet_radius.value = fin_defs.get('fillet_radius_mm', 0.5) / 10.0
                     self.fin_length.value = cyl_data.length
             finally:
                 self._is_updating = False
@@ -380,6 +392,8 @@ class WigglyHoleGeneratorUI:
                 'offset': self.fin_offset.value,
                 'has_lead_in': self.fin_lead_in.value,
                 'lead_in_length': self.fin_lead_in_length.value,
+                'has_fillet': self.fin_fillet.value,
+                'fillet_radius': self.fin_fillet_radius.value,
                 'flip_direction': self.fin_flip.value
             }
 

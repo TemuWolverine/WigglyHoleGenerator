@@ -153,8 +153,8 @@ def _make_tapered_fin_box(tbm, center_tip, u_fin, w_fin, l_fin, t_tip, t_root, h
     w_root = t_root / 2.0
     psi = math.atan2(w_root - w_tip, l_fin)
 
-    l_side = (l_fin / math.cos(psi)) * 1.5
-    w_box = max(t_root * 4.0, 1.0)
+    l_side = (l_fin / math.cos(psi)) * 2.5
+    w_box = max(t_root * 8.0, 2.0)
 
     cos_p = math.cos(psi)
     sin_p = math.sin(psi)
@@ -183,8 +183,8 @@ def _make_tapered_fin_box(tbm, center_tip, u_fin, w_fin, l_fin, t_tip, t_root, h
         center_tip.z
     )
     c2 = adsk.core.Point3D.create(
-        p_mid2.x - (w_box / 2.0) * w2.x,
-        p_mid2.y - (w_box / 2.0) * w2.y,
+        p_mid2.x + (w_box / 2.0) * w2.x,
+        p_mid2.y + (w_box / 2.0) * w2.y,
         p_mid2.z
     )
     box2 = tbm.createBox(adsk.core.OrientedBoundingBox3D.create(c2, u2, w2, l_side, w_box, height))
@@ -192,12 +192,13 @@ def _make_tapered_fin_box(tbm, center_tip, u_fin, w_fin, l_fin, t_tip, t_root, h
     tbm.booleanOperation(box1, box2, adsk.fusion.BooleanTypes.IntersectionBooleanType)
 
     # Clip off material before tip
+    l_clip = l_fin * 3.0
     c_clip = adsk.core.Point3D.create(
-        center_tip.x + (l_fin * 1.5 / 2.0) * u_fin.x,
-        center_tip.y + (l_fin * 1.5 / 2.0) * u_fin.y,
+        center_tip.x + (l_clip / 2.0) * u_fin.x,
+        center_tip.y + (l_clip / 2.0) * u_fin.y,
         center_tip.z
     )
-    box_clip = tbm.createBox(adsk.core.OrientedBoundingBox3D.create(c_clip, u_fin, w_fin, l_fin * 1.5, w_box * 2.0, height))
+    box_clip = tbm.createBox(adsk.core.OrientedBoundingBox3D.create(c_clip, u_fin, w_fin, l_clip, w_box * 2.0, height))
     tbm.booleanOperation(box1, box_clip, adsk.fusion.BooleanTypes.IntersectionBooleanType)
     return box1
 
@@ -210,33 +211,22 @@ def _trim_to_cylinder(tbm, body, r_outer, z_min, z_max):
     tbm.booleanOperation(body, cyl, adsk.fusion.BooleanTypes.IntersectionBooleanType)
 
 
-def _cut_lead_in(tbm, body, x_wall, x_tip, z_start, lead_in_len, cut_width):
-    """Subtracts an angled box at the entrance to form a smooth lead-in chamfer."""
+def _cut_lead_in(tbm, body, r_wall, r_inner, z_start, lead_in_len):
+    """Subtracts an axisymmetric conical cutter at the entrance to form a smooth funnel lead-in chamfer."""
     if lead_in_len <= 0.0001:
         return body
 
-    dx = x_tip - x_wall  # negative
-    dz = lead_in_len     # positive
-    dist = math.hypot(dx, dz)
-    if dist < 1e-5:
-        return body
+    p1 = adsk.core.Point3D.create(0.0, 0.0, z_start)
+    p2 = adsk.core.Point3D.create(0.0, 0.0, z_start + lead_in_len)
+    cone = tbm.createCylinderOrCone(p1, r_wall + 0.02, p2, r_inner)
 
-    u_dir = adsk.core.Vector3D.create(dx / dist, 0.0, dz / dist)
-    w_dir = adsk.core.Vector3D.create(-dz / dist, 0.0, dx / dist)
+    # Also clear any material strictly before z_start
+    p_pre1 = adsk.core.Point3D.create(0.0, 0.0, z_start - 0.5)
+    p_pre2 = adsk.core.Point3D.create(0.0, 0.0, z_start)
+    pre_cyl = tbm.createCylinderOrCone(p_pre1, r_wall + 0.02, p_pre2, r_wall + 0.02)
+    tbm.booleanOperation(cone, pre_cyl, adsk.fusion.BooleanTypes.UnionBooleanType)
 
-    mx = (x_wall + x_tip) / 2.0
-    mz = z_start + lead_in_len / 2.0
-
-    length_cut = dist * 1.5
-    height_cut = dist * 1.5
-    center = adsk.core.Point3D.create(
-        mx + (height_cut / 2.0) * w_dir.x,
-        0.0,
-        mz + (height_cut / 2.0) * w_dir.z
-    )
-
-    cut_box = _make_box(tbm, center, u_dir, adsk.core.Vector3D.create(0.0, 1.0, 0.0), length_cut, cut_width, height_cut)
-    tbm.booleanOperation(body, cut_box, adsk.fusion.BooleanTypes.DifferenceBooleanType)
+    tbm.booleanOperation(body, cone, adsk.fusion.BooleanTypes.DifferenceBooleanType)
     return body
 
 
@@ -282,7 +272,7 @@ def create_compliant_fins_body(cyl_data: CylinderData, params: dict):
 
     # Clamp bounds to safe geometry
     t_tip = max(0.03, min(radius * 0.4, t_tip))
-    t_root = max(t_tip, min(radius * 0.8, t_root))
+    t_root = max(0.03, min(radius * 0.8, t_root))
     protrusion = max(0.02, min(radius * 0.8, protrusion))
     slant_deg = max(15.0, min(75.0, slant_angle_deg))
     if direction == FinDirection.COUNTER_CLOCKWISE:
@@ -323,11 +313,9 @@ def create_compliant_fins_body(cyl_data: CylinderData, params: dict):
     single_fin = _make_tapered_fin_box(tbm, center_tip, u_fin, w_fin, l_fin, t_tip, t_root, rib_len)
     _trim_to_cylinder(tbm, single_fin, r_outer, z0, z1)
 
-    # Lead-in chamfer for fin entrance
+    # Conical lead-in chamfer for fin entrance
     if lead_in > 0.001:
-        x_wall = r_inner + s_fin * cos_s
-        x_tip = r_inner
-        _cut_lead_in(tbm, single_fin, x_wall, x_tip, z0, lead_in, t_root * 4.0)
+        _cut_lead_in(tbm, single_fin, r_outer, r_inner, z0, lead_in)
 
     # Replicate around Z axis and transform to world coordinate frame
     all_fins = _pattern_ribs(tbm, single_fin, count)
@@ -486,13 +474,103 @@ def apply_cutter_body(parent_component: adsk.fusion.Component, target_body: adsk
         return parent_component.features.combineFeatures.add(combine_input)
 
 
-def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.fusion.BRepBody, tool_body: adsk.fusion.BRepBody, feature_name: str = "Compliant Fins"):
+def _find_root_edges(target_body: adsk.fusion.BRepBody, cyl_data: CylinderData) -> adsk.core.ObjectCollection:
+    """Finds the concave intersection edges on target_body where the fin blades meet the cylindrical hole wall."""
+    root_edges = adsk.core.ObjectCollection.create()
+    if not target_body or not target_body.isValid or not cyl_data:
+        return root_edges
+
+    radius = cyl_data.radius
+    origin = cyl_data.origin
+    axis = cyl_data.axis
+
+    try:
+        concave_set = {e.tempId for e in target_body.concaveEdges}
+    except:
+        concave_set = None
+
+    for edge in target_body.edges:
+        if not edge.isValid or edge.length < 0.005:
+            continue
+
+        # Check concavity if available
+        if concave_set is not None and edge.tempId not in concave_set:
+            continue
+
+        # Check orientation: must be parallel to cylinder axis
+        try:
+            ev = edge.evaluator
+            ret, s_pt, e_pt = ev.getEndPoints()
+            if not ret or not s_pt or not e_pt:
+                continue
+            dx = e_pt.x - s_pt.x
+            dy = e_pt.y - s_pt.y
+            dz = e_pt.z - s_pt.z
+            seg_len = math.hypot(dx, dy, dz)
+            if seg_len < 0.005:
+                continue
+            dot = (dx * axis.x + dy * axis.y + dz * axis.z) / seg_len
+            if abs(dot) < 0.85:
+                continue
+        except:
+            continue
+
+        # Check distance from cylinder axis at midpoint
+        try:
+            pt = edge.pointOnEdge
+            vx = pt.x - origin.x
+            vy = pt.y - origin.y
+            vz = pt.z - origin.z
+            proj = vx * axis.x + vy * axis.y + vz * axis.z
+            rx = vx - proj * axis.x
+            ry = vy - proj * axis.y
+            rz = vz - proj * axis.z
+            r_dist = math.hypot(rx, ry, rz)
+            if abs(r_dist - radius) > min(0.05, radius * 0.1):
+                continue
+        except:
+            continue
+
+        root_edges.add(edge)
+
+    return root_edges
+
+
+def _apply_root_fillets(parent_component: adsk.fusion.Component, target_body: adsk.fusion.BRepBody, cyl_data: CylinderData, fillet_radius: float, feature_name: str):
+    """Creates a fillet feature on the root edges where fins join the hole wall."""
+    root_edges = _find_root_edges(target_body, cyl_data)
+    if root_edges.count == 0:
+        return None
+
+    fillet_feats = parent_component.features.filletFeatures
+
+    # Try requested radius, then gracefully scale down if needed to prevent geometry failure
+    for r_try in [fillet_radius, min(fillet_radius, 0.04), min(fillet_radius, 0.02)]:
+        if r_try <= 0.001:
+            break
+        try:
+            fillet_input = fillet_feats.createInput()
+            radius_val = adsk.core.ValueInput.createByReal(r_try)
+            fillet_input.edgeSetInputs.addConstantRadiusEdgeSet(root_edges, radius_val, False)
+            fillet_feat = fillet_feats.add(fillet_input)
+            fillet_feat.name = f"{feature_name} Fillet"
+            return fillet_feat
+        except:
+            continue
+
+    return None
+
+
+def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.fusion.BRepBody, tool_body: adsk.fusion.BRepBody, feature_name: str = "Compliant Fins", cyl_data: CylinderData = None, params: dict = None):
     """
     Applies the tool body to the target body via Combine Join,
-    creating a timeline group in parametric mode.
+    optionally fillets the root edges, and creates a timeline group in parametric mode.
     """
     design = parent_component.parentDesign
     is_parametric = (design.designType == adsk.fusion.DesignTypes.ParametricDesignType)
+
+    has_fillet = bool(params.get('has_fillet', False)) if params else False
+    fillet_radius = float(params.get('fillet_radius', 0.0)) if params else 0.0
 
     if is_parametric:
         base_feature = parent_component.features.baseFeatures.add()
@@ -512,8 +590,14 @@ def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.f
         combine_feature = parent_component.features.combineFeatures.add(combine_input)
         combine_feature.name = feature_name
 
+        fillet_feature = None
+        if has_fillet and fillet_radius > 0.001 and cyl_data:
+            result_body = combine_feature.bodies.item(0) if (combine_feature and combine_feature.bodies.count > 0) else target_body
+            fillet_feature = _apply_root_fillets(parent_component, result_body, cyl_data, fillet_radius, feature_name)
+
+        timeline_end = fillet_feature.timelineObject.index if fillet_feature else combine_feature.timelineObject.index
         try:
-            design.timeline.timelineGroups.add(base_feature.timelineObject.index, combine_feature.timelineObject.index)
+            design.timeline.timelineGroups.add(base_feature.timelineObject.index, timeline_end)
         except:
             pass
         return combine_feature
@@ -525,4 +609,10 @@ def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.f
         combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
         combine_input.isNewComponent = False
         combine_input.isKeepToolBodies = False
-        return parent_component.features.combineFeatures.add(combine_input)
+        combine_feature = parent_component.features.combineFeatures.add(combine_input)
+
+        if has_fillet and fillet_radius > 0.001 and cyl_data:
+            result_body = combine_feature.bodies.item(0) if (combine_feature and combine_feature.bodies.count > 0) else target_body
+            _apply_root_fillets(parent_component, result_body, cyl_data, fillet_radius, feature_name)
+
+        return combine_feature
