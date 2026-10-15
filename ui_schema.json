@@ -1,0 +1,309 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WigglyHoleGeneratorUISchema",
+  "selection": {
+    "id": "holeSelection",
+    "label": "Hole Face",
+    "prompt": "Select cylindrical face of the hole",
+    "filter": "CylindricalFaces",
+    "limits": [1, 1],
+    "tooltip": "Select the cylindrical interior face of the hole."
+  },
+  "header_inputs": [
+    {
+      "id": "featureType",
+      "type": "button_row",
+      "label": "Type",
+      "isMultiSelect": false,
+      "items": [
+        {
+          "name": "Compliant Fins",
+          "icon": "resources/ui/icon_compliant_fins",
+          "selected": true
+        },
+        {
+          "name": "Coathanger",
+          "icon": "resources/ui/icon_coathanger",
+          "selected": false
+        },
+        {
+          "name": "Crush Ribs",
+          "icon": "resources/ui/icon_crush_ribs",
+          "selected": false
+        }
+      ]
+    },
+    {
+      "id": "infoBox",
+      "type": "text_box",
+      "label": "",
+      "default": "Please select a cylindrical hole face.",
+      "lineCount": 2,
+      "isReadOnly": true,
+      "isFullWidth": true
+    }
+  ],
+  "groups": [
+    {
+      "id": "finGroup",
+      "label": "Compliant Fins Parameters",
+      "isExpanded": true,
+      "visible_when": {
+        "field": "featureType",
+        "equals": "Compliant Fins"
+      },
+      "inputs": [
+        {
+          "id": "finCount",
+          "type": "spinner",
+          "label": "Fin Count",
+          "min": 2,
+          "max": 16,
+          "step": 1,
+          "default": 4,
+          "tooltip": "Number of flexural fins evenly spaced around the hole circumference."
+        },
+        {
+          "id": "finThickness",
+          "type": "value",
+          "label": "Tip Thickness",
+          "unit": "mm",
+          "default": "0.8 mm",
+          "tooltip": "Blade thickness at the free contact tip (e.g. 2 perimeters for 3D printing)."
+        },
+        {
+          "id": "finRootThickness",
+          "type": "value",
+          "label": "Root Thickness",
+          "unit": "mm",
+          "default": "1.2 mm",
+          "tooltip": "Blade thickness at the hole wall base. Tapering from root to tip forms a constant-stress beam."
+        },
+        {
+          "id": "finProtrusion",
+          "type": "value",
+          "label": "Fin Reach (Inward)",
+          "unit": "mm",
+          "default": "1.0 mm",
+          "tooltip": "Radial reach of the fin inward into the hole from the wall."
+        },
+        {
+          "id": "finSlant",
+          "type": "value",
+          "label": "Slant Angle",
+          "unit": "deg",
+          "default": "45 deg",
+          "tooltip": "Angle of the fin relative to the radial direction."
+        },
+        {
+          "id": "finDirection",
+          "type": "dropdown",
+          "label": "Slant Direction",
+          "items": ["Clockwise", "Counter-Clockwise"],
+          "default": "Clockwise"
+        },
+        {
+          "id": "finFillet",
+          "type": "bool",
+          "label": "Root Fillet",
+          "default": true,
+          "tooltip": "Add a fillet where the fins connect to the hole wall to relieve stress concentration."
+        },
+        {
+          "id": "finFilletRadius",
+          "type": "value",
+          "label": "Fillet Radius",
+          "unit": "mm",
+          "default": "0.5 mm",
+          "tooltip": "Radius of the fillet blending the fin root into the hole wall.",
+          "visible_when": {
+            "field": "finFillet",
+            "equals": true
+          }
+        },
+        {
+          "id": "finFullDepth",
+          "type": "bool",
+          "label": "Full Depth",
+          "default": true,
+          "tooltip": "Extend the fins along the entire axial length of the hole."
+        },
+        {
+          "id": "finLength",
+          "type": "value",
+          "label": "Custom Length",
+          "unit": "mm",
+          "default": "10 mm",
+          "visible_when": {
+            "field": "finFullDepth",
+            "equals": false
+          }
+        },
+        {
+          "id": "finOffset",
+          "type": "value",
+          "label": "Start Offset",
+          "unit": "mm",
+          "default": "0 mm",
+          "visible_when": {
+            "field": "finFullDepth",
+            "equals": false
+          }
+        },
+        {
+          "id": "finLeadIn",
+          "type": "bool",
+          "label": "Lead-in Chamfer",
+          "default": true,
+          "tooltip": "Add an angled entrance chamfer so the pin centers and glides in smoothly."
+        },
+        {
+          "id": "finLeadInLength",
+          "type": "value",
+          "label": "Lead-in Length",
+          "unit": "mm",
+          "default": "1.5 mm",
+          "visible_when": {
+            "field": "finLeadIn",
+            "equals": true
+          }
+        },
+        {
+          "id": "finFlip",
+          "type": "bool",
+          "label": "Flip Entrance",
+          "default": false,
+          "tooltip": "Invert the hole entrance direction."
+        }
+      ]
+    },
+    {
+      "id": "coatGroup",
+      "label": "Coathanger Flexure Parameters",
+      "isExpanded": true,
+      "visible_when": {
+        "field": "featureType",
+        "equals": "Coathanger"
+      },
+      "inputs": [
+        {
+          "id": "coatWallThickness",
+          "type": "value",
+          "label": "Finger Thickness",
+          "unit": "mm",
+          "default": "1.2 mm"
+        },
+        {
+          "id": "coatSlotWidth",
+          "type": "value",
+          "label": "Relief Slot Width",
+          "unit": "mm",
+          "default": "1.5 mm"
+        },
+        {
+          "id": "coatArcSpan",
+          "type": "value",
+          "label": "Arc Span",
+          "unit": "deg",
+          "default": "120 deg"
+        },
+        {
+          "id": "coatSlitWidth",
+          "type": "value",
+          "label": "Slit Width",
+          "unit": "mm",
+          "default": "1.0 mm"
+        },
+        {
+          "id": "coatRotationAngle",
+          "type": "value",
+          "label": "Orientation Angle",
+          "unit": "deg",
+          "default": "0 deg"
+        }
+      ]
+    },
+    {
+      "id": "crushGroup",
+      "label": "Crush Ribs Parameters",
+      "isExpanded": true,
+      "visible_when": {
+        "field": "featureType",
+        "equals": "Crush Ribs"
+      },
+      "inputs": [
+        {
+          "id": "crushCount",
+          "type": "spinner",
+          "label": "Rib Count",
+          "min": 2,
+          "max": 16,
+          "step": 1,
+          "default": 4
+        },
+        {
+          "id": "crushWidth",
+          "type": "value",
+          "label": "Fin / Rib Width",
+          "unit": "mm",
+          "default": "0.8 mm"
+        },
+        {
+          "id": "crushHeight",
+          "type": "value",
+          "label": "Interference Height",
+          "unit": "mm",
+          "default": "0.3 mm"
+        },
+        {
+          "id": "crushFullDepth",
+          "type": "bool",
+          "label": "Full Depth",
+          "default": true
+        },
+        {
+          "id": "crushLength",
+          "type": "value",
+          "label": "Fin / Rib Length",
+          "unit": "mm",
+          "default": "10 mm",
+          "visible_when": {
+            "field": "crushFullDepth",
+            "equals": false
+          }
+        },
+        {
+          "id": "crushLeadIn",
+          "type": "bool",
+          "label": "Lead-in Chamfer",
+          "default": true
+        },
+        {
+          "id": "crushLeadInLength",
+          "type": "value",
+          "label": "Lead-in Length",
+          "unit": "mm",
+          "default": "1.5 mm",
+          "visible_when": {
+            "field": "crushLeadIn",
+            "equals": true
+          }
+        },
+        {
+          "id": "crushFlip",
+          "type": "bool",
+          "label": "Flip Direction",
+          "default": false
+        }
+      ]
+    }
+  ],
+  "footer_inputs": [
+    {
+      "id": "showPreview",
+      "type": "bool",
+      "label": "Show Preview",
+      "default": true
+    }
+  ]
+}

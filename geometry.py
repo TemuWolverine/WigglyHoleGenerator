@@ -248,6 +248,49 @@ def _pattern_ribs(tbm, single_rib, count):
     return accum
 
 
+def create_crush_ribs_body(cyl_data: CylinderData, params: dict):
+    """
+    Creates a temporary BRepBody containing crush ribs.
+    All dimensions are expected in centimeters (Fusion internal units).
+    """
+    tbm = adsk.fusion.TemporaryBRepManager.get()
+    radius = cyl_data.radius
+    total_len = cyl_data.length
+
+    count = int(params.get('count', 4))
+    h = float(params.get('height', 0.03))
+    w = float(params.get('width', 0.08))
+    full_depth = bool(params.get('full_depth', True))
+    depth_len = float(params.get('length', total_len))
+    has_lead_in = bool(params.get('has_lead_in', True))
+    lead_in_len = float(params.get('lead_in_length', 0.15))
+
+    z0 = 0.0
+    z1 = total_len if full_depth else min(total_len, depth_len)
+    rib_len = z1 - z0
+    if rib_len <= 0.001:
+        return None
+
+    embed = min(0.05, radius * 0.15)
+    r_outer = radius + embed
+    r_inner = max(0.005, radius - h)
+    z_mid = (z0 + z1) / 2.0
+
+    center = adsk.core.Point3D.create(radius - (h / 2.0), 0.0, z_mid)
+    u_rad = adsk.core.Vector3D.create(1.0, 0.0, 0.0)
+    w_tan = adsk.core.Vector3D.create(0.0, 1.0, 0.0)
+    single_rib = _make_box(tbm, center, u_rad, w_tan, h + embed, w, rib_len)
+    _trim_to_cylinder(tbm, single_rib, r_outer, z0, z1)
+
+    lead_in = min(lead_in_len, rib_len * 0.75) if has_lead_in else 0.0
+    if lead_in > 0.001:
+        _cut_lead_in(tbm, single_rib, r_outer, r_inner, z0, lead_in)
+
+    all_ribs = _pattern_ribs(tbm, single_rib, count)
+    tbm.transform(all_ribs, cyl_data.matrix_local_to_global)
+    return all_ribs
+
+
 def create_compliant_fins_body(cyl_data: CylinderData, params: dict):
     """
     Creates a temporary BRepBody containing all compliant flexural fins.
