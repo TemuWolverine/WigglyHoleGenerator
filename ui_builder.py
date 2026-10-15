@@ -188,6 +188,11 @@ class SchemaUIBuilder:
         elif isinstance(item, adsk.core.SelectionCommandInput):
             return item.selection(0).entity if item.selectionCount > 0 else None
 
+    def get_expression(self, input_id: str) -> str:
+        """Extracts the expression string of a ValueCommandInput, or None."""
+        item = self.items.get(input_id)
+        if isinstance(item, adsk.core.ValueCommandInput):
+            return item.expression
         return None
 
     def set_value(self, input_id: str, value):
@@ -235,32 +240,50 @@ class SchemaUIBuilder:
         if 'count' in params:
             self.set_value('finCount', params['count'])
             self.set_value('crushCount', params['count'])
-        if 'thickness' in params:
+        if 'thickness_expr' in params and params['thickness_expr']:
+            self.set_value('finThickness', params['thickness_expr'])
+        elif 'thickness' in params:
             self.set_value('finThickness', params['thickness'])
-        if 'thickness_root' in params:
+        if 'thickness_root_expr' in params and params['thickness_root_expr']:
+            self.set_value('finRootThickness', params['thickness_root_expr'])
+        elif 'thickness_root' in params:
             self.set_value('finRootThickness', params['thickness_root'])
-        if 'protrusion' in params:
+        if 'protrusion_expr' in params and params['protrusion_expr']:
+            self.set_value('finProtrusion', params['protrusion_expr'])
+        elif 'protrusion' in params:
             self.set_value('finProtrusion', params['protrusion'])
-        if 'slant_angle_deg' in params:
+        if 'slant_expr' in params and params['slant_expr']:
+            self.set_value('finSlant', params['slant_expr'])
+        elif 'slant_angle_deg' in params:
             self.set_value('finSlant', math.radians(params['slant_angle_deg']))
         if 'direction' in params:
             self.set_value('finDirection', params['direction'])
         if 'has_fillet' in params:
             self.set_value('finFillet', params['has_fillet'])
-        if 'fillet_radius' in params:
+        if 'fillet_expr' in params and params['fillet_expr']:
+            self.set_value('finFilletRadius', params['fillet_expr'])
+        elif 'fillet_radius' in params:
             self.set_value('finFilletRadius', params['fillet_radius'])
         if 'full_depth' in params:
             self.set_value('finFullDepth', params['full_depth'])
             self.set_value('crushFullDepth', params['full_depth'])
-        if 'length' in params:
+        if 'length_expr' in params and params['length_expr']:
+            self.set_value('finLength', params['length_expr'])
+            self.set_value('crushLength', params['length_expr'])
+        elif 'length' in params:
             self.set_value('finLength', params['length'])
             self.set_value('crushLength', params['length'])
-        if 'offset' in params:
+        if 'offset_expr' in params and params['offset_expr']:
+            self.set_value('finOffset', params['offset_expr'])
+        elif 'offset' in params:
             self.set_value('finOffset', params['offset'])
         if 'has_lead_in' in params:
             self.set_value('finLeadIn', params['has_lead_in'])
             self.set_value('crushLeadIn', params['has_lead_in'])
-        if 'lead_in_length' in params:
+        if 'lead_in_expr' in params and params['lead_in_expr']:
+            self.set_value('finLeadInLength', params['lead_in_expr'])
+            self.set_value('crushLeadInLength', params['lead_in_expr'])
+        elif 'lead_in_length' in params:
             self.set_value('finLeadInLength', params['lead_in_length'])
             self.set_value('crushLeadInLength', params['lead_in_length'])
         if 'flip_direction' in params:
@@ -268,21 +291,35 @@ class SchemaUIBuilder:
             self.set_value('crushFlip', params['flip_direction'])
 
         # Coathanger
-        if 'wall_thickness' in params:
+        if 'wall_thickness_expr' in params and params['wall_thickness_expr']:
+            self.set_value('coatWallThickness', params['wall_thickness_expr'])
+        elif 'wall_thickness' in params:
             self.set_value('coatWallThickness', params['wall_thickness'])
-        if 'slot_width' in params:
+        if 'slot_width_expr' in params and params['slot_width_expr']:
+            self.set_value('coatSlotWidth', params['slot_width_expr'])
+        elif 'slot_width' in params:
             self.set_value('coatSlotWidth', params['slot_width'])
-        if 'arc_deg' in params:
+        if 'arc_expr' in params and params['arc_expr']:
+            self.set_value('coatArcSpan', params['arc_expr'])
+        elif 'arc_deg' in params:
             self.set_value('coatArcSpan', math.radians(params['arc_deg']))
-        if 'slit_width' in params:
+        if 'slit_width_expr' in params and params['slit_width_expr']:
+            self.set_value('coatSlitWidth', params['slit_width_expr'])
+        elif 'slit_width' in params:
             self.set_value('coatSlitWidth', params['slit_width'])
-        if 'rotation_deg' in params:
+        if 'rotation_expr' in params and params['rotation_expr']:
+            self.set_value('coatRotationAngle', params['rotation_expr'])
+        elif 'rotation_deg' in params:
             self.set_value('coatRotationAngle', math.radians(params['rotation_deg']))
 
         # Crush Ribs
-        if 'width' in params:
+        if 'width_expr' in params and params['width_expr']:
+            self.set_value('crushWidth', params['width_expr'])
+        elif 'width' in params:
             self.set_value('crushWidth', params['width'])
-        if 'height' in params:
+        if 'height_expr' in params and params['height_expr']:
+            self.set_value('crushHeight', params['height_expr'])
+        elif 'height' in params:
             self.set_value('crushHeight', params['height'])
 
         self.update_visibility()
@@ -311,17 +348,25 @@ class SchemaUIBuilder:
                 'type': mode,
                 'count': int(self.get_value('finCount') or 4),
                 'thickness': float(self.get_value('finThickness') or 0.08),
+                'thickness_expr': self.get_expression('finThickness'),
                 'thickness_root': float(self.get_value('finRootThickness') or 0.12),
+                'thickness_root_expr': self.get_expression('finRootThickness'),
                 'protrusion': float(self.get_value('finProtrusion') or 0.1),
+                'protrusion_expr': self.get_expression('finProtrusion'),
                 'slant_angle_deg': math.degrees(float(self.get_value('finSlant') or math.radians(45.0))),
+                'slant_expr': self.get_expression('finSlant'),
                 'direction': str(self.get_value('finDirection') or 'Clockwise'),
                 'full_depth': full_depth,
                 'length': float(self.get_value('finLength') or 1.0),
+                'length_expr': self.get_expression('finLength'),
                 'offset': float(self.get_value('finOffset') or 0.0),
+                'offset_expr': self.get_expression('finOffset'),
                 'has_lead_in': bool(self.get_value('finLeadIn')),
                 'lead_in_length': float(self.get_value('finLeadInLength') or 0.15),
+                'lead_in_expr': self.get_expression('finLeadInLength'),
                 'has_fillet': bool(self.get_value('finFillet')),
                 'fillet_radius': float(self.get_value('finFilletRadius') or 0.05),
+                'fillet_expr': self.get_expression('finFilletRadius'),
                 'flip_direction': bool(self.get_value('finFlip'))
             }
 
@@ -329,10 +374,15 @@ class SchemaUIBuilder:
             return {
                 'type': mode,
                 'wall_thickness': float(self.get_value('coatWallThickness') or 0.12),
+                'wall_thickness_expr': self.get_expression('coatWallThickness'),
                 'slot_width': float(self.get_value('coatSlotWidth') or 0.15),
+                'slot_width_expr': self.get_expression('coatSlotWidth'),
                 'arc_deg': math.degrees(float(self.get_value('coatArcSpan') or math.radians(120.0))),
+                'arc_expr': self.get_expression('coatArcSpan'),
                 'slit_width': float(self.get_value('coatSlitWidth') or 0.1),
-                'rotation_deg': math.degrees(float(self.get_value('coatRotationAngle') or 0.0))
+                'slit_width_expr': self.get_expression('coatSlitWidth'),
+                'rotation_deg': math.degrees(float(self.get_value('coatRotationAngle') or 0.0)),
+                'rotation_expr': self.get_expression('coatRotationAngle')
             }
 
         elif mode == 'Crush Ribs':
@@ -341,11 +391,15 @@ class SchemaUIBuilder:
                 'type': mode,
                 'count': int(self.get_value('crushCount') or 4),
                 'width': float(self.get_value('crushWidth') or 0.08),
+                'width_expr': self.get_expression('crushWidth'),
                 'height': float(self.get_value('crushHeight') or 0.03),
+                'height_expr': self.get_expression('crushHeight'),
                 'full_depth': full_depth,
                 'length': float(self.get_value('crushLength') or 1.0),
+                'length_expr': self.get_expression('crushLength'),
                 'has_lead_in': bool(self.get_value('crushLeadIn')),
                 'lead_in_length': float(self.get_value('crushLeadInLength') or 0.15),
+                'lead_in_expr': self.get_expression('crushLeadInLength'),
                 'flip_direction': bool(self.get_value('crushFlip'))
             }
 
