@@ -190,6 +190,103 @@ class SchemaUIBuilder:
 
         return None
 
+    def set_value(self, input_id: str, value):
+        """Sets the value of an input by its identifier."""
+        item = self.items.get(input_id)
+        if not item or value is None:
+            return
+
+        if isinstance(item, adsk.core.ValueCommandInput):
+            if isinstance(value, (int, float)):
+                item.value = float(value)
+            elif isinstance(value, str):
+                item.expression = value
+        elif isinstance(item, adsk.core.BoolValueCommandInput):
+            item.value = bool(value)
+        elif isinstance(item, adsk.core.IntegerSpinnerCommandInput):
+            item.value = int(value)
+        elif isinstance(item, adsk.core.DropDownCommandInput):
+            val_str = str(value)
+            for itm in item.listItems:
+                itm.isSelected = (itm.name == val_str)
+        elif isinstance(item, adsk.core.ButtonRowCommandInput):
+            val_str = str(value)
+            for itm in item.listItems:
+                itm.isSelected = (itm.name == val_str)
+        elif isinstance(item, adsk.core.TextBoxCommandInput):
+            item.text = str(value)
+        elif isinstance(item, adsk.core.SelectionCommandInput):
+            item.clearSelection()
+            if value and isinstance(value, adsk.core.Base):
+                item.addSelection(value)
+
+    def populate_from_parameters(self, params: dict, face: adsk.fusion.BRepFace = None):
+        """Pre-populates the dialog inputs from a saved configuration dictionary."""
+        if not params:
+            return
+
+        feature_type = params.get('type') or params.get('feature_type') or 'Compliant Fins'
+        self.set_value('featureType', feature_type)
+
+        if face:
+            self.set_value('holeSelection', face)
+
+        # Compliant Fins
+        if 'count' in params:
+            self.set_value('finCount', params['count'])
+            self.set_value('crushCount', params['count'])
+        if 'thickness' in params:
+            self.set_value('finThickness', params['thickness'])
+        if 'thickness_root' in params:
+            self.set_value('finRootThickness', params['thickness_root'])
+        if 'protrusion' in params:
+            self.set_value('finProtrusion', params['protrusion'])
+        if 'slant_angle_deg' in params:
+            self.set_value('finSlant', math.radians(params['slant_angle_deg']))
+        if 'direction' in params:
+            self.set_value('finDirection', params['direction'])
+        if 'has_fillet' in params:
+            self.set_value('finFillet', params['has_fillet'])
+        if 'fillet_radius' in params:
+            self.set_value('finFilletRadius', params['fillet_radius'])
+        if 'full_depth' in params:
+            self.set_value('finFullDepth', params['full_depth'])
+            self.set_value('crushFullDepth', params['full_depth'])
+        if 'length' in params:
+            self.set_value('finLength', params['length'])
+            self.set_value('crushLength', params['length'])
+        if 'offset' in params:
+            self.set_value('finOffset', params['offset'])
+        if 'has_lead_in' in params:
+            self.set_value('finLeadIn', params['has_lead_in'])
+            self.set_value('crushLeadIn', params['has_lead_in'])
+        if 'lead_in_length' in params:
+            self.set_value('finLeadInLength', params['lead_in_length'])
+            self.set_value('crushLeadInLength', params['lead_in_length'])
+        if 'flip_direction' in params:
+            self.set_value('finFlip', params['flip_direction'])
+            self.set_value('crushFlip', params['flip_direction'])
+
+        # Coathanger
+        if 'wall_thickness' in params:
+            self.set_value('coatWallThickness', params['wall_thickness'])
+        if 'slot_width' in params:
+            self.set_value('coatSlotWidth', params['slot_width'])
+        if 'arc_deg' in params:
+            self.set_value('coatArcSpan', math.radians(params['arc_deg']))
+        if 'slit_width' in params:
+            self.set_value('coatSlitWidth', params['slit_width'])
+        if 'rotation_deg' in params:
+            self.set_value('coatRotationAngle', math.radians(params['rotation_deg']))
+
+        # Crush Ribs
+        if 'width' in params:
+            self.set_value('crushWidth', params['width'])
+        if 'height' in params:
+            self.set_value('crushHeight', params['height'])
+
+        self.update_visibility()
+
     def get_item(self, input_id: str):
         """Returns the native CommandInput object."""
         return self.items.get(input_id)

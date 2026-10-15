@@ -475,10 +475,10 @@ def create_coathanger_cutter(cyl_data: CylinderData, params: dict):
     return cyl_outer
 
 
-def apply_cutter_body(parent_component: adsk.fusion.Component, target_body: adsk.fusion.BRepBody, cutter_body: adsk.fusion.BRepBody, feature_name: str = "Coathanger Flexure"):
+def apply_cutter_body(parent_component: adsk.fusion.Component, target_body: adsk.fusion.BRepBody, cutter_body: adsk.fusion.BRepBody, feature_name: str = "Coathanger Flexure", create_group: bool = False):
     """
-    Subtracts the cutter body from the target body via Combine Cut,
-    creating a timeline group in parametric mode.
+    Subtracts the cutter body from the target body via Combine Cut.
+    Returns a dict with internal timeline features.
     """
     design = parent_component.parentDesign
     is_parametric = (design.designType == adsk.fusion.DesignTypes.ParametricDesignType)
@@ -501,11 +501,19 @@ def apply_cutter_body(parent_component: adsk.fusion.Component, target_body: adsk
         combine_feature = parent_component.features.combineFeatures.add(combine_input)
         combine_feature.name = feature_name
 
-        try:
-            design.timeline.timelineGroups.add(base_feature.timelineObject.index, combine_feature.timelineObject.index)
-        except:
-            pass
-        return combine_feature
+        if create_group:
+            try:
+                design.timeline.timelineGroups.add(base_feature.timelineObject.index, combine_feature.timelineObject.index)
+            except:
+                pass
+
+        return {
+            'base_feature': base_feature,
+            'combine_feature': combine_feature,
+            'fillet_feature': None,
+            'end_feature': combine_feature,
+            'result_body': target_body
+        }
     else:
         added_body = parent_component.bRepBodies.add(cutter_body)
         tool_bodies = adsk.core.ObjectCollection.create()
@@ -514,7 +522,14 @@ def apply_cutter_body(parent_component: adsk.fusion.Component, target_body: adsk
         combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
         combine_input.isNewComponent = False
         combine_input.isKeepToolBodies = False
-        return parent_component.features.combineFeatures.add(combine_input)
+        combine_feature = parent_component.features.combineFeatures.add(combine_input)
+        return {
+            'base_feature': None,
+            'combine_feature': combine_feature,
+            'fillet_feature': None,
+            'end_feature': combine_feature,
+            'result_body': target_body
+        }
 
 
 def _find_root_edges(target_body: adsk.fusion.BRepBody, cyl_data: CylinderData) -> adsk.core.ObjectCollection:
@@ -604,10 +619,10 @@ def _apply_root_fillets(parent_component: adsk.fusion.Component, target_body: ad
     return None
 
 
-def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.fusion.BRepBody, tool_body: adsk.fusion.BRepBody, feature_name: str = "Compliant Fins", cyl_data: CylinderData = None, params: dict = None):
+def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.fusion.BRepBody, tool_body: adsk.fusion.BRepBody, feature_name: str = "Compliant Fins", cyl_data: CylinderData = None, params: dict = None, create_group: bool = False):
     """
     Applies the tool body to the target body via Combine Join,
-    optionally fillets the root edges, and creates a timeline group in parametric mode.
+    optionally fillets the root edges, and returns internal timeline features.
     """
     design = parent_component.parentDesign
     is_parametric = (design.designType == adsk.fusion.DesignTypes.ParametricDesignType)
@@ -633,17 +648,26 @@ def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.f
         combine_feature = parent_component.features.combineFeatures.add(combine_input)
         combine_feature.name = feature_name
 
+        result_body = combine_feature.bodies.item(0) if (combine_feature and combine_feature.bodies.count > 0) else target_body
+
         fillet_feature = None
         if has_fillet and fillet_radius > 0.001 and cyl_data:
-            result_body = combine_feature.bodies.item(0) if (combine_feature and combine_feature.bodies.count > 0) else target_body
             fillet_feature = _apply_root_fillets(parent_component, result_body, cyl_data, fillet_radius, feature_name)
 
-        timeline_end = fillet_feature.timelineObject.index if fillet_feature else combine_feature.timelineObject.index
-        try:
-            design.timeline.timelineGroups.add(base_feature.timelineObject.index, timeline_end)
-        except:
-            pass
-        return combine_feature
+        if create_group:
+            timeline_end = fillet_feature.timelineObject.index if fillet_feature else combine_feature.timelineObject.index
+            try:
+                design.timeline.timelineGroups.add(base_feature.timelineObject.index, timeline_end)
+            except:
+                pass
+
+        return {
+            'base_feature': base_feature,
+            'combine_feature': combine_feature,
+            'fillet_feature': fillet_feature,
+            'end_feature': fillet_feature if fillet_feature else combine_feature,
+            'result_body': result_body
+        }
     else:
         added_body = parent_component.bRepBodies.add(tool_body)
         tool_bodies = adsk.core.ObjectCollection.create()
@@ -654,8 +678,87 @@ def apply_tool_body(parent_component: adsk.fusion.Component, target_body: adsk.f
         combine_input.isKeepToolBodies = False
         combine_feature = parent_component.features.combineFeatures.add(combine_input)
 
-        if has_fillet and fillet_radius > 0.001 and cyl_data:
-            result_body = combine_feature.bodies.item(0) if (combine_feature and combine_feature.bodies.count > 0) else target_body
-            _apply_root_fillets(parent_component, result_body, cyl_data, fillet_radius, feature_name)
+        result_body = combine_feature.bodies.item(0) if (combine_feature and combine_feature.bodies.count > 0) else target_body
 
-        return combine_feature
+        fillet_feature = None
+        if has_fillet and fillet_radius > 0.001 and cyl_data:
+            fillet_feature = _apply_root_fillets(parent_component, result_body, cyl_data, fillet_radius, feature_name)
+
+        return {
+            'base_feature': None,
+            'combine_feature': combine_feature,
+            'fillet_feature': fillet_feature,
+            'end_feature': combine_feature,
+            'result_body': result_body
+        }
+
+
+def update_base_feature_body(base_feature: adsk.fusion.BaseFeature, new_tool_body: adsk.fusion.BRepBody) -> bool:
+    """Updates the B-Rep body inside an existing BaseFeature in-place."""
+    if not base_feature or not base_feature.isValid or not new_tool_body or not new_tool_body.isValid:
+        return False
+    try:
+        base_feature.startEdit()
+        if base_feature.bodies.count > 0:
+            existing_body = base_feature.bodies.item(0)
+            base_feature.updateBody(existing_body, new_tool_body)
+        else:
+            base_feature.parentComponent.bRepBodies.add(new_tool_body, base_feature)
+        base_feature.finishEdit()
+        return True
+    except:
+        return False
+
+
+def update_custom_feature_geometry(custom_feat: adsk.fusion.CustomFeature, target_body: adsk.fusion.BRepBody, cyl_data: CylinderData, params: dict) -> bool:
+    """
+    Regenerates geometry for an existing CustomFeature in-place.
+    Updates the BaseFeature solid/cutter body using native updateBody.
+    """
+    if not custom_feat or not custom_feat.isValid or not target_body or not cyl_data:
+        return False
+
+    mode = params.get('type', 'Compliant Fins')
+
+    # 1. Generate new tool/cutter body
+    if mode == 'Compliant Fins':
+        new_body = create_compliant_fins_body(cyl_data, params)
+    elif mode == 'Coathanger':
+        new_body = create_coathanger_cutter(cyl_data, params)
+    elif mode == 'Crush Ribs':
+        new_body = create_crush_ribs_body(cyl_data, params)
+    else:
+        return False
+
+    if not new_body or not new_body.isValid:
+        return False
+
+    # 2. Locate BaseFeature child inside CustomFeature
+    base_feat = None
+    for feat in custom_feat.features:
+        if isinstance(feat, adsk.fusion.BaseFeature):
+            base_feat = feat
+            break
+
+    if not base_feat or not base_feat.isValid:
+        return False
+
+    # 3. Update the BaseFeature body in place
+    ok = update_base_feature_body(base_feat, new_body)
+    if not ok:
+        return False
+
+    # 4. If fillet feature exists, update its radius parameter
+    if params.get('has_fillet', False):
+        fillet_radius = float(params.get('fillet_radius', 0.05))
+        for feat in custom_feat.features:
+            if isinstance(feat, adsk.fusion.FilletFeature):
+                try:
+                    for es in feat.edgeSets:
+                        if hasattr(es, 'radius'):
+                            es.radius.value = fillet_radius
+                except:
+                    pass
+                break
+
+    return True
