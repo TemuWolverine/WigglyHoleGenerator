@@ -1,5 +1,10 @@
 # Wiggly Hole Generator - Fusion 360 Add-In
 
+> **AI Disclaimer**  
+> This is generated with AI (specifically Gemini Flash 3.8 & Argon).  
+> 
+> It works, but yes, its LLM-slop, I'm not going to pretend like I learnt Python just for this. I am also not claiming to have written this myself.
+
 **Wiggly Hole Generator** is a  Autodesk Fusion 360 add-in designed for  weirdos like me - I guess mechanical engineers, product designers, and 3D printing enthusiasts. 
 
 It automates the generation of internal **Compliant Flexural Fins**, **Coathanger Flexures** (I don't know what they're actually called), and **Crush Ribs** inside cylindrical holes for press-fit pins, dowels, bearings, and fasteners.
