@@ -18,7 +18,7 @@
       "items": [
         {
           "name": "Compliant Fins",
-          "icon": "resources/ui/icon_compliant_fins",
+          "icon": "resources/ui/icon_shark_fin",
           "selected": true
         },
         {
@@ -28,7 +28,7 @@
         },
         {
           "name": "Crush Ribs",
-          "icon": "resources/ui/icon_crush_ribs",
+          "icon": "resources/ui/icon_ribs",
           "selected": false
         }
       ]
@@ -58,7 +58,7 @@
           "type": "spinner",
           "label": "Fin Count",
           "min": 2,
-          "max": 16,
+          "max": 100,
           "step": 1,
           "default": 4,
           "tooltip": "Number of flexural fins evenly spaced around the hole circumference."
@@ -237,7 +237,7 @@
           "type": "spinner",
           "label": "Rib Count",
           "min": 2,
-          "max": 16,
+          "max": 100,
           "step": 1,
           "default": 4
         },

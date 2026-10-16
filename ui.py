@@ -41,10 +41,10 @@ class WigglyHoleGeneratorUI:
         # --- 2. Feature Type Selector ---
         self.feature_type_row = inputs.addButtonRowCommandInput('featureType', 'Type', False)
         self.feature_type_row.listItems.add(
-            FeatureType.CRUSH_RIBS, True, os.path.join(self.resource_dir, 'ui', 'crush_ribs')
+            FeatureType.CRUSH_RIBS, True, os.path.join(self.resource_dir, 'ui', 'icon_ribs')
         )
         self.feature_type_row.listItems.add(
-            FeatureType.COMPLIANT_FINS, False, os.path.join(self.resource_dir, 'ui', 'compliant_fins')
+            FeatureType.COMPLIANT_FINS, False, os.path.join(self.resource_dir, 'ui', 'icon_shark_fin')
         )
         self.feature_type_row.tooltip = 'Select between Crush Ribs (deform plastically) or Compliant Fins (flex elastically).'
 
@@ -70,7 +70,7 @@ class WigglyHoleGeneratorUI:
             RibProfile.TRAPEZOIDAL, False, os.path.join(self.resource_dir, 'ui', 'profile_trapezoidal')
         )
 
-        self.crush_count = c_inputs.addIntegerSpinnerCommandInput('crushCount', 'Rib Count', 2, 24, 1, 4)
+        self.crush_count = c_inputs.addIntegerSpinnerCommandInput('crushCount', 'Rib Count', 2, 100, 1, 4)
         self.crush_count.tooltip = 'Number of ribs evenly spaced around the hole circumference.'
 
         self.crush_height = c_inputs.addValueInput(
@@ -115,7 +115,7 @@ class WigglyHoleGeneratorUI:
         self.fin_group.isExpanded = True
         f_inputs = self.fin_group.children
 
-        self.fin_count = f_inputs.addIntegerSpinnerCommandInput('finCount', 'Fin Count', 2, 16, 1, 4)
+        self.fin_count = f_inputs.addIntegerSpinnerCommandInput('finCount', 'Fin Count', 2, 100, 1, 4)
         self.fin_count.tooltip = 'Number of flexural fins spaced circumferentially around the hole.'
 
         self.fin_thickness = f_inputs.addValueInput(

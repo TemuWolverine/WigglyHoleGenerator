@@ -157,17 +157,13 @@ class EditCommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
 
             _active_ui_builder = SchemaUIBuilder(cmd.commandInputs, schema_path, self.resource_dir)
 
-            # 2. Retrieve saved configuration and dependent hole face
+            # 2. Retrieve saved configuration
             params = _extract_custom_feature_config(_edited_custom_feature)
             _sync_params_from_custom_feature(_edited_custom_feature, params)
 
-            target_body = _find_target_body_for_feature(_edited_custom_feature)
-            hole_face = _find_matching_cylinder_face(target_body, params) if target_body else None
-
-            # 3. Pre-populate dialog inputs with existing settings
-            _active_ui_builder.populate_from_parameters(params, hole_face)
-            if hole_face:
-                _update_hole_info(_active_ui_builder)
+            # 3. Pre-populate dialog inputs with existing settings (hole_face is selected in EditActivateHandler after rolling timeline before the feature)
+            _active_ui_builder.populate_from_parameters(params, None)
+            _update_hole_info(_active_ui_builder)
 
         except:
             if _ui:
@@ -249,28 +245,70 @@ def _find_target_body_for_feature(cf: adsk.fusion.CustomFeature) -> adsk.fusion.
     return None
 
 
+def _find_source_feature_for_face(face: adsk.fusion.BRepFace) -> adsk.fusion.Feature:
+    """Finds the upstream timeline feature (Extrude, Hole, Revolve, etc.) that created this face."""
+    if not face or not face.isValid:
+        return None
+    comp = face.body.parentComponent
+    if not comp:
+        return None
+
+    # 1. Search in reverse timeline order for exact face match
+    for i in range(comp.features.count - 1, -1, -1):
+        feat = comp.features.item(i)
+        if isinstance(feat, (adsk.fusion.BaseFeature, adsk.fusion.CustomFeature, adsk.fusion.CombineFeature)):
+            continue
+        try:
+            if hasattr(feat, 'faces'):
+                for f in feat.faces:
+                    if f == face:
+                        return feat
+        except:
+            pass
+
+    # 2. Search for feature that generated the body
+    for i in range(comp.features.count - 1, -1, -1):
+        feat = comp.features.item(i)
+        if isinstance(feat, (adsk.fusion.BaseFeature, adsk.fusion.CustomFeature, adsk.fusion.CombineFeature)):
+            continue
+        try:
+            if hasattr(feat, 'bodies'):
+                for b in feat.bodies:
+                    if b == face.body:
+                        return feat
+        except:
+            pass
+
+    return None
+
+
 def _find_matching_cylinder_face(body: adsk.fusion.BRepBody, params: dict) -> adsk.fusion.BRepFace:
-    """Finds the original cylindrical hole face on target_body using saved geometric anchor."""
+    """Finds the cylindrical hole face on target_body using saved geometric anchor."""
     if not body or not body.isValid:
         return None
     origin_pt = params.get('cyl_origin')
     axis_vec = params.get('cyl_axis')
-    radius = params.get('cyl_radius')
+    saved_radius = params.get('cyl_radius')
 
-    if origin_pt and axis_vec and radius:
+    if origin_pt and axis_vec:
         ref_origin = adsk.core.Point3D.create(origin_pt[0], origin_pt[1], origin_pt[2])
         ref_axis = adsk.core.Vector3D.create(axis_vec[0], axis_vec[1], axis_vec[2])
         best_face = None
-        min_dist = float('inf')
+        best_score = float('inf')
         for f in body.faces:
             geom = f.geometry
             if geom.surfaceType == adsk.core.SurfaceTypes.CylinderSurfaceType:
                 cyl: adsk.core.Cylinder = geom
                 if abs(cyl.axis.dotProduct(ref_axis)) > 0.85:
-                    d = cyl.origin.distanceTo(ref_origin)
-                    if abs(cyl.radius - radius) < 0.1 and d < min_dist:
-                        min_dist = d
-                        best_face = f
+                    vec = ref_origin.vectorTo(cyl.origin)
+                    cross = vec.crossProduct(cyl.axis)
+                    axis_dist = cross.length
+                    if axis_dist < 0.2:
+                        r_diff = abs(cyl.radius - float(saved_radius)) if saved_radius is not None else 0.0
+                        score = axis_dist + r_diff * 10.0
+                        if score < best_score:
+                            best_score = score
+                            best_face = f
         if best_face:
             return best_face
 
@@ -371,8 +409,18 @@ class ValidateInputsHandler(adsk.core.ValidateInputsEventHandler):
 
             hole_sel = _active_ui_builder.get_item('holeSelection')
             if not hole_sel or hole_sel.selectionCount == 0:
-                args.areInputsValid = False
-                return
+                if _edited_custom_feature and _edited_custom_feature.isValid:
+                    saved_cfg = _extract_custom_feature_config(_edited_custom_feature)
+                    target_body = _find_target_body_for_feature(_edited_custom_feature)
+                    face = _find_matching_cylinder_face(target_body, saved_cfg) if target_body else None
+                    if face and face.isValid and hole_sel:
+                        try:
+                            hole_sel.addSelection(face)
+                        except:
+                            pass
+                if (not hole_sel or hole_sel.selectionCount == 0) and not (_edited_custom_feature and _edited_custom_feature.isValid):
+                    args.areInputsValid = False
+                    return
 
             mode = _active_ui_builder.get_selected_feature_type()
             if mode == TYPE_COMPLIANT_FINS:
@@ -399,80 +447,126 @@ class ValidateInputsHandler(adsk.core.ValidateInputsEventHandler):
             args.areInputsValid = False
 
 
+def _val_input(expr_key: str, val_key: str, default_val: float, unit_str: str, params: dict) -> adsk.core.ValueInput:
+    """Helper to create ValueInput from string expression if present, else fallback to real number."""
+    expr = params.get(expr_key)
+    if expr is not None and str(expr).strip():
+        try:
+            return adsk.core.ValueInput.createByString(str(expr).strip())
+        except:
+            pass
+    val = params.get(val_key, default_val)
+    if unit_str == 'deg':
+        return adsk.core.ValueInput.createByReal(math.radians(float(val)))
+    return adsk.core.ValueInput.createByReal(float(val))
+
+
+def _set_param_value(p: adsk.fusion.CustomFeatureParameter, expr_val, fallback_val):
+    """Sets expression string if available, otherwise numeric value."""
+    if expr_val is not None and str(expr_val).strip():
+        try:
+            p.expression = str(expr_val).strip()
+            return
+        except:
+            pass
+    if fallback_val is not None:
+        try:
+            p.value = fallback_val
+        except:
+            pass
+
+
 def _bind_custom_parameters(cf_input: adsk.fusion.CustomFeatureInput, params: dict, length_unit: str = 'mm'):
     """Registers exposed dimensional parameters into Fusion's Change Parameters (fx) table."""
     mode = params.get('type', TYPE_COMPLIANT_FINS)
 
     if mode == TYPE_COMPLIANT_FINS:
-        cf_input.addCustomParameter('finCount', 'Fin Count', adsk.core.ValueInput.createByReal(float(params.get('count', 4))), '', True)
-        cf_input.addCustomParameter('finThickness', 'Tip Thickness', adsk.core.ValueInput.createByReal(params.get('thickness', 0.08)), length_unit, True)
-        cf_input.addCustomParameter('finRootThickness', 'Root Thickness', adsk.core.ValueInput.createByReal(params.get('thickness_root', 0.12)), length_unit, True)
-        cf_input.addCustomParameter('finProtrusion', 'Fin Reach', adsk.core.ValueInput.createByReal(params.get('protrusion', 0.1)), length_unit, True)
-        cf_input.addCustomParameter('finSlant', 'Slant Angle', adsk.core.ValueInput.createByReal(math.radians(params.get('slant_angle_deg', 45.0))), 'deg', True)
+        cf_input.addCustomParameter('finCount', 'Fin Count', _val_input('count_expr', 'count', 4, '', params), '', True)
+        cf_input.addCustomParameter('finThickness', 'Tip Thickness', _val_input('thickness_expr', 'thickness', 0.08, length_unit, params), length_unit, True)
+        cf_input.addCustomParameter('finRootThickness', 'Root Thickness', _val_input('thickness_root_expr', 'thickness_root', 0.12, length_unit, params), length_unit, True)
+        cf_input.addCustomParameter('finProtrusion', 'Fin Reach', _val_input('protrusion_expr', 'protrusion', 0.1, length_unit, params), length_unit, True)
+        cf_input.addCustomParameter('finSlant', 'Slant Angle', _val_input('slant_expr', 'slant_angle_deg', 45.0, 'deg', params), 'deg', True)
         if not params.get('full_depth', True):
-            cf_input.addCustomParameter('finLength', 'Fin Length', adsk.core.ValueInput.createByReal(params.get('length', 1.0)), length_unit, True)
-            cf_input.addCustomParameter('finOffset', 'Fin Offset', adsk.core.ValueInput.createByReal(params.get('offset', 0.0)), length_unit, True)
+            cf_input.addCustomParameter('finLength', 'Fin Length', _val_input('length_expr', 'length', 1.0, length_unit, params), length_unit, True)
+            cf_input.addCustomParameter('finOffset', 'Fin Offset', _val_input('offset_expr', 'offset', 0.0, length_unit, params), length_unit, True)
         if params.get('has_lead_in', True):
-            cf_input.addCustomParameter('finLeadInLength', 'Lead-in Length', adsk.core.ValueInput.createByReal(params.get('lead_in_length', 0.15)), length_unit, True)
+            cf_input.addCustomParameter('finLeadInLength', 'Lead-in Length', _val_input('lead_in_expr', 'lead_in_length', 0.15, length_unit, params), length_unit, True)
         if params.get('has_fillet', True):
-            cf_input.addCustomParameter('finFilletRadius', 'Fillet Radius', adsk.core.ValueInput.createByReal(params.get('fillet_radius', 0.05)), length_unit, True)
+            cf_input.addCustomParameter('finFilletRadius', 'Fillet Radius', _val_input('fillet_expr', 'fillet_radius', 0.05, length_unit, params), length_unit, True)
 
     elif mode == TYPE_COATHANGER:
-        cf_input.addCustomParameter('coatWallThickness', 'Finger Thickness', adsk.core.ValueInput.createByReal(params.get('wall_thickness', 0.12)), length_unit, True)
-        cf_input.addCustomParameter('coatSlotWidth', 'Relief Slot Width', adsk.core.ValueInput.createByReal(params.get('slot_width', 0.15)), length_unit, True)
-        cf_input.addCustomParameter('coatArcSpan', 'Arc Span', adsk.core.ValueInput.createByReal(math.radians(params.get('arc_deg', 120.0))), 'deg', True)
-        cf_input.addCustomParameter('coatSlitWidth', 'Slit Width', adsk.core.ValueInput.createByReal(params.get('slit_width', 0.1)), length_unit, True)
-        cf_input.addCustomParameter('coatRotationAngle', 'Orientation Angle', adsk.core.ValueInput.createByReal(math.radians(params.get('rotation_deg', 0.0))), 'deg', True)
+        cf_input.addCustomParameter('coatWallThickness', 'Finger Thickness', _val_input('wall_thickness_expr', 'wall_thickness', 0.12, length_unit, params), length_unit, True)
+        cf_input.addCustomParameter('coatSlotWidth', 'Relief Slot Width', _val_input('slot_width_expr', 'slot_width', 0.15, length_unit, params), length_unit, True)
+        cf_input.addCustomParameter('coatArcSpan', 'Arc Span', _val_input('arc_expr', 'arc_deg', 120.0, 'deg', params), 'deg', True)
+        cf_input.addCustomParameter('coatSlitWidth', 'Slit Width', _val_input('slit_width_expr', 'slit_width', 0.1, length_unit, params), length_unit, True)
+        cf_input.addCustomParameter('coatRotationAngle', 'Orientation Angle', _val_input('rotation_expr', 'rotation_deg', 0.0, 'deg', params), 'deg', True)
 
     elif mode == TYPE_CRUSH_RIBS:
-        cf_input.addCustomParameter('crushCount', 'Rib Count', adsk.core.ValueInput.createByReal(float(params.get('count', 4))), '', True)
-        cf_input.addCustomParameter('crushWidth', 'Rib Width', adsk.core.ValueInput.createByReal(params.get('width', 0.08)), length_unit, True)
-        cf_input.addCustomParameter('crushHeight', 'Rib Height', adsk.core.ValueInput.createByReal(params.get('height', 0.03)), length_unit, True)
+        cf_input.addCustomParameter('crushCount', 'Rib Count', _val_input('count_expr', 'count', 4, '', params), '', True)
+        cf_input.addCustomParameter('crushWidth', 'Rib Width', _val_input('width_expr', 'width', 0.08, length_unit, params), length_unit, True)
+        cf_input.addCustomParameter('crushHeight', 'Rib Height', _val_input('height_expr', 'height', 0.03, length_unit, params), length_unit, True)
         if not params.get('full_depth', True):
-            cf_input.addCustomParameter('crushLength', 'Rib Length', adsk.core.ValueInput.createByReal(params.get('length', 1.0)), length_unit, True)
+            cf_input.addCustomParameter('crushLength', 'Rib Length', _val_input('length_expr', 'length', 1.0, length_unit, params), length_unit, True)
         if params.get('has_lead_in', True):
-            cf_input.addCustomParameter('crushLeadInLength', 'Lead-in Length', adsk.core.ValueInput.createByReal(params.get('lead_in_length', 0.15)), length_unit, True)
+            cf_input.addCustomParameter('crushLeadInLength', 'Lead-in Length', _val_input('lead_in_expr', 'lead_in_length', 0.15, length_unit, params), length_unit, True)
 
 
 def _sync_params_from_custom_feature(custom_feat: adsk.fusion.CustomFeature, params: dict):
-    """Overrides params dictionary with live values from CustomFeatureParameters."""
+    """Overrides params dictionary with live values and expressions from CustomFeatureParameters."""
     if not custom_feat or not custom_feat.isValid:
         return
     for p in custom_feat.parameters:
         try:
             pid = p.id
+            expr = p.expression
             if pid in ('finCount', 'crushCount'):
                 params['count'] = int(round(p.value))
+                params['count_expr'] = expr
             elif pid == 'finThickness':
                 params['thickness'] = p.value
+                params['thickness_expr'] = expr
             elif pid == 'finRootThickness':
                 params['thickness_root'] = p.value
+                params['thickness_root_expr'] = expr
             elif pid == 'finProtrusion':
                 params['protrusion'] = p.value
+                params['protrusion_expr'] = expr
             elif pid == 'finSlant':
                 params['slant_angle_deg'] = math.degrees(p.value)
+                params['slant_expr'] = expr
             elif pid in ('finLength', 'crushLength'):
                 params['length'] = p.value
+                params['length_expr'] = expr
             elif pid == 'finOffset':
                 params['offset'] = p.value
+                params['offset_expr'] = expr
             elif pid in ('finLeadInLength', 'crushLeadInLength'):
                 params['lead_in_length'] = p.value
+                params['lead_in_expr'] = expr
             elif pid == 'finFilletRadius':
                 params['fillet_radius'] = p.value
+                params['fillet_expr'] = expr
             elif pid == 'coatWallThickness':
                 params['wall_thickness'] = p.value
+                params['wall_thickness_expr'] = expr
             elif pid == 'coatSlotWidth':
                 params['slot_width'] = p.value
+                params['slot_width_expr'] = expr
             elif pid == 'coatArcSpan':
                 params['arc_deg'] = math.degrees(p.value)
+                params['arc_expr'] = expr
             elif pid == 'coatSlitWidth':
                 params['slit_width'] = p.value
+                params['slit_width_expr'] = expr
             elif pid == 'coatRotationAngle':
                 params['rotation_deg'] = math.degrees(p.value)
+                params['rotation_expr'] = expr
             elif pid == 'crushWidth':
                 params['width'] = p.value
+                params['width_expr'] = expr
             elif pid == 'crushHeight':
                 params['height'] = p.value
+                params['height_expr'] = expr
         except:
             pass
 
@@ -485,37 +579,37 @@ def _update_feature_parameters(custom_feat: adsk.fusion.CustomFeature, params: d
         try:
             pid = p.id
             if pid in ('finCount', 'crushCount') and 'count' in params:
-                p.value = float(params['count'])
+                _set_param_value(p, params.get('count_expr'), float(params['count']))
             elif pid == 'finThickness' and 'thickness' in params:
-                p.value = params['thickness']
+                _set_param_value(p, params.get('thickness_expr'), params['thickness'])
             elif pid == 'finRootThickness' and 'thickness_root' in params:
-                p.value = params['thickness_root']
+                _set_param_value(p, params.get('thickness_root_expr'), params['thickness_root'])
             elif pid == 'finProtrusion' and 'protrusion' in params:
-                p.value = params['protrusion']
+                _set_param_value(p, params.get('protrusion_expr'), params['protrusion'])
             elif pid == 'finSlant' and 'slant_angle_deg' in params:
-                p.value = math.radians(params['slant_angle_deg'])
+                _set_param_value(p, params.get('slant_expr'), math.radians(params['slant_angle_deg']))
             elif pid in ('finLength', 'crushLength') and 'length' in params:
-                p.value = params['length']
+                _set_param_value(p, params.get('length_expr'), params['length'])
             elif pid == 'finOffset' and 'offset' in params:
-                p.value = params['offset']
+                _set_param_value(p, params.get('offset_expr'), params['offset'])
             elif pid in ('finLeadInLength', 'crushLeadInLength') and 'lead_in_length' in params:
-                p.value = params['lead_in_length']
+                _set_param_value(p, params.get('lead_in_expr'), params['lead_in_length'])
             elif pid == 'finFilletRadius' and 'fillet_radius' in params:
-                p.value = params['fillet_radius']
+                _set_param_value(p, params.get('fillet_expr'), params['fillet_radius'])
             elif pid == 'coatWallThickness' and 'wall_thickness' in params:
-                p.value = params['wall_thickness']
+                _set_param_value(p, params.get('wall_thickness_expr'), params['wall_thickness'])
             elif pid == 'coatSlotWidth' and 'slot_width' in params:
-                p.value = params['slot_width']
+                _set_param_value(p, params.get('slot_width_expr'), params['slot_width'])
             elif pid == 'coatArcSpan' and 'arc_deg' in params:
-                p.value = math.radians(params['arc_deg'])
+                _set_param_value(p, params.get('arc_expr'), math.radians(params['arc_deg']))
             elif pid == 'coatSlitWidth' and 'slit_width' in params:
-                p.value = params['slit_width']
+                _set_param_value(p, params.get('slit_width_expr'), params['slit_width'])
             elif pid == 'coatRotationAngle' and 'rotation_deg' in params:
-                p.value = math.radians(params['rotation_deg'])
+                _set_param_value(p, params.get('rotation_expr'), math.radians(params['rotation_deg']))
             elif pid == 'crushWidth' and 'width' in params:
-                p.value = params['width']
+                _set_param_value(p, params.get('width_expr'), params['width'])
             elif pid == 'crushHeight' and 'height' in params:
-                p.value = params['height']
+                _set_param_value(p, params.get('height_expr'), params['height'])
         except:
             pass
 
@@ -535,11 +629,18 @@ def _commit_feature(ui_builder: SchemaUIBuilder, is_preview: bool = False) -> bo
 
     if not face or not face.isValid:
         # Fallback to finding matching cylinder face using saved geometric anchor
+        lookup_params = dict(params)
+        if _edited_custom_feature and _edited_custom_feature.isValid:
+            saved_cfg = _extract_custom_feature_config(_edited_custom_feature)
+            lookup_params = {**saved_cfg, **params}
+
         design = adsk.fusion.Design.cast(_app.activeProduct) if _app else None
         root = design.rootComponent if design else None
         target_body = None
-        if root:
-            body_name = params.get('body_name')
+        if _edited_custom_feature and _edited_custom_feature.isValid:
+            target_body = _find_target_body_for_feature(_edited_custom_feature)
+        if not target_body and root:
+            body_name = lookup_params.get('body_name')
             if body_name:
                 for b in root.bRepBodies:
                     if b.name == body_name and b.isValid:
@@ -549,10 +650,10 @@ def _commit_feature(ui_builder: SchemaUIBuilder, is_preview: bool = False) -> bo
                 target_body = root.bRepBodies.item(0)
 
         if target_body:
-            face = _find_matching_cylinder_face(target_body, params)
+            face = _find_matching_cylinder_face(target_body, lookup_params)
             if face and face.isValid and hole_selection:
                 try:
-                    hole_selection.clear()
+                    hole_selection.clearSelection()
                     hole_selection.addSelection(face)
                 except:
                     pass
@@ -604,6 +705,14 @@ def _commit_feature(ui_builder: SchemaUIBuilder, is_preview: bool = False) -> bo
             custom_feats = parent_component.features.customFeatures
             cf_input = custom_feats.createInput(_custom_feature_def)
             cf_input.setStartAndEndFeatures(feat_res['base_feature'], feat_res['end_feature'])
+
+            # Register timeline dependency on hole's source feature so upstream hole changes trigger compute
+            src_feat = _find_source_feature_for_face(face)
+            if src_feat:
+                try:
+                    cf_input.addDependency('sourceFeature', src_feat)
+                except:
+                    pass
 
             length_unit = design.unitsManager.defaultLengthUnits if design else 'mm'
             _bind_custom_parameters(cf_input, params, length_unit)
@@ -676,6 +785,8 @@ class EditActivateHandler(adsk.core.CommandEventHandler):
         try:
             if not _edited_custom_feature or not _edited_custom_feature.isValid:
                 return
+            if _is_rolled_for_edit:
+                return
 
             design = adsk.fusion.Design.cast(_app.activeProduct)
             if not design:
@@ -688,14 +799,17 @@ class EditActivateHandler(adsk.core.CommandEventHandler):
             _is_rolled_for_edit = True
             args.command.beginStep()
 
-            # Ensure face is selected in UI at rolled-before state
+            # Ensure clean cylindrical hole face is selected in UI at rolled-before state
             config = _extract_custom_feature_config(_edited_custom_feature)
             target_body = _find_target_body_for_feature(_edited_custom_feature)
             face = _find_matching_cylinder_face(target_body, config) if target_body else None
             if face and face.isValid and _active_ui_builder:
                 hole_sel = _active_ui_builder.get_item('holeSelection')
-                if hole_sel and hole_sel.selectionCount == 0:
+                if hole_sel:
+                    hole_sel.clearSelection()
                     hole_sel.addSelection(face)
+                _update_hole_info(_active_ui_builder)
+                args.command.doExecutePreview()
         except:
             pass
 
@@ -708,6 +822,21 @@ class EditExecutePreviewHandler(adsk.core.CommandEventHandler):
             if preview_box and not preview_box.value:
                 args.isValidResult = False
                 return
+
+            # Ensure holeSelection is populated with the clean hole face on the rolled-back body
+            if _active_ui_builder and _edited_custom_feature and _edited_custom_feature.isValid:
+                hole_sel = _active_ui_builder.get_item('holeSelection')
+                face = hole_sel.selection(0).entity if (hole_sel and hole_sel.selectionCount > 0) else None
+                if not face or not face.isValid:
+                    saved_cfg = _extract_custom_feature_config(_edited_custom_feature)
+                    target_body = _find_target_body_for_feature(_edited_custom_feature)
+                    face = _find_matching_cylinder_face(target_body, saved_cfg) if target_body else None
+                    if face and face.isValid and hole_sel:
+                        try:
+                            hole_sel.clearSelection()
+                            hole_sel.addSelection(face)
+                        except:
+                            pass
 
             _commit_feature(_active_ui_builder, is_preview=True)
             args.isValidResult = False
@@ -757,12 +886,13 @@ class EditExecuteHandler(adsk.core.CommandEventHandler):
             # 1. Update CustomFeature parameters
             _update_feature_parameters(_edited_custom_feature, params)
 
-            # 2. Get re-selected or matched hole face
+            # 2. Get re-selected or matched hole face (using saved geometric anchor as fallback)
             hole_sel = _active_ui_builder.get_item('holeSelection') if _active_ui_builder else None
             face = hole_sel.selection(0).entity if (hole_sel and hole_sel.selectionCount > 0) else None
             if not face or not face.isValid:
                 target_body = _find_target_body_for_feature(_edited_custom_feature)
-                face = _find_matching_cylinder_face(target_body, params) if target_body else None
+                lookup_params = {**old_params, **params}
+                face = _find_matching_cylinder_face(target_body, lookup_params) if target_body else None
 
             if not face or not face.isValid:
                 args.executeFailed = True
@@ -779,6 +909,17 @@ class EditExecuteHandler(adsk.core.CommandEventHandler):
             params['cyl_length'] = cyl_data.length
             params['body_name'] = face.body.name
 
+            # Ensure dependency on source feature is registered so upstream hole changes trigger compute
+            src_feat = _find_source_feature_for_face(face)
+            if src_feat:
+                try:
+                    old_dep = _edited_custom_feature.dependencies.itemById('sourceFeature')
+                    if old_dep:
+                        old_dep.deleteMe()
+                    _edited_custom_feature.dependencies.add('sourceFeature', src_feat)
+                except:
+                    pass
+
             # 3. Update geometry in-place
             ok = update_custom_feature_geometry(_edited_custom_feature, face.body, cyl_data, params)
             if not ok:
@@ -793,7 +934,7 @@ class EditExecuteHandler(adsk.core.CommandEventHandler):
 
             # 4. Save metadata
             params_json = json.dumps(params)
-            _edited_custom_feature.customNamedValues.addOrSetValue('config', params_json)
+            cf.customNamedValues.addOrSetValue('config', params_json) if (cf := _edited_custom_feature) else None
             try:
                 _edited_custom_feature.attributes.add('CrushFins', 'config', params_json)
             except:
@@ -862,9 +1003,23 @@ class ComputeCustomFeatureHandler(adsk.fusion.CustomFeatureEventHandler):
             flip = bool(params.get('flip_direction', False))
             cyl_data = CylinderData(face, flip)
 
-            update_custom_feature_geometry(cf, face.body, cyl_data, params)
-        except:
-            pass
+            ok = update_custom_feature_geometry(cf, face.body, cyl_data, params)
+            if not ok:
+                args.computeStatus.statusMessages.addError('GEOMETRY_COMPUTE_FAILED', 'Failed to compute updated feature geometry.')
+                return
+
+            # Persist updated params back to config so next time or edit dialog has latest
+            params_json = json.dumps(params)
+            cf.customNamedValues.addOrSetValue('config', params_json)
+            try:
+                cf.attributes.add('CrushFins', 'config', params_json)
+            except:
+                pass
+        except Exception as e:
+            try:
+                args.computeStatus.statusMessages.addError('COMPUTE_EXCEPTION', str(e))
+            except:
+                pass
 
 
 def run(context):

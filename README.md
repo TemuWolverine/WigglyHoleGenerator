@@ -4,10 +4,14 @@
 
 It automates the generation of internal **Compliant Flexural Fins**, **Coathanger Flexures** (I don't know what they're actually called), and **Crush Ribs** inside cylindrical holes for press-fit pins, dowels, bearings, and fasteners.
 
+![alt text](image.png)
+
 ## How to Install & Run
 
 The add-in is linked to your Fusion 360 Add-Ins directory:
 `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\WigglyHoleGenerator`
+
+Clone this repo into that folder
 
 ### In Fusion 360:
 1. Open **Autodesk Fusion 360**.
@@ -20,3 +24,9 @@ The add-in is linked to your Fusion 360 Add-Ins directory:
 8. Click the **Wiggly Hole Generator** button (located on the toolbar).
 9. Select a hole, tweak the properties, and click **OK**!
 
+## Icons
+* Shark Fin by Annisa from <a href="https://thenounproject.com/browse/icons/term/shark-fin/" target="_blank" title="Shark Fin Icons">Noun Project</a> (CC BY 3.0)
+
+* Ribs by popcornarts from <a href="https://thenounproject.com/browse/icons/term/ribs/" target="_blank" title="Ribs Icons">Noun Project</a> (CC BY 3.0)
+
+* hanger by Ismet Demirdelen from <a href="https://thenounproject.com/browse/icons/term/hanger/" target="_blank" title="hanger Icons">Noun Project</a> (CC BY 3.0)
